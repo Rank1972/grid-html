@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三栏 · ETF网格策略</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="dashboard">
+
+    <!-- 左侧：品种选择卡片 + 当前价格 -->
+    <div class="card-side">
+        <div class="card-header">
+            <h2>📋 品种</h2>
+            <span class="badge">实时价</span>
+        </div>
+        <div class="sub">
+            <span>ETF 全历史极值</span>
+        </div>
+
+        <div class="input-group">
+            <label>选择品种</label>
+            <select id="etfSelect"><option value="">— 加载中 —</option></select>
+        </div>
+        <div class="input-group">
+            <label>最高价 <span class="unit">(P_high)</span></label>
+            <input type="number" id="sideHigh" step="any" min="0.01" placeholder="自动">
+        </div>
+        <div class="input-group">
+            <label>最低价 <span class="unit">(P_low)</span></label>
+            <input type="number" id="sideLow" step="any" min="0.001" placeholder="自动">
+        </div>
+
+        <!-- 当前价格信息行 -->
+        <div class="current-info" id="currentInfo">
+            <div class="row"><span class="label">📌 当前价格</span><span class="value highlight" id="displayPrice">—</span></div>
+            <div class="row"><span class="label">🎯 目标仓位</span><span class="value" id="displayRatio">—</span></div>
+            <div class="row"><span class="label">💰 应持市值</span><span class="value" id="displayValue">—</span></div>
+            <div class="row"><span class="label">📦 持股(100股)</span><span class="value" id="displayShares">—</span></div>
+            <div class="price-fetch">
+                <input type="number" id="manualPrice" step="any" min="0.001" placeholder="手动输入价格" value="8">
+                <button class="btn btn-primary btn-sm" id="fetchPriceBtn">获取实时价</button>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" id="applyBtn">⟳ 应用到主计算</button>
+
+        <div class="favorite-list">
+            <div class="title">⭐ 优选品种</div>
+            <div id="favoriteContainer"></div>
+        </div>
+        <div class="footnote" style="margin-top:12px; border-top: none; padding-top:0;">
+            🔹 点击优选品种快速加载
+        </div>
+    </div>
+
+    <!-- 中间：主网格计算器 -->
+    <div class="card">
+        <div class="card-header">
+            <h2>📐 主网格</h2>
+            <span class="badge">固定档位</span>
+        </div>
+        <div class="sub">
+            <span>等对数间隔 · n 档</span>
+            <span class="formula-hint">P_k = P_high × (P_low/P_high)^(k/n)</span>
+        </div>
+
+        <form id="gridForm">
+            <div class="grid-2col">
+                <div class="input-group">
+                    <label>最高价 <span class="unit">(P_high)</span></label>
+                    <input type="number" id="highPrice" step="any" min="0.01" value="32">
+                </div>
+                <div class="input-group">
+                    <label>最低价 <span class="unit">(P_low)</span></label>
+                    <input type="number" id="lowPrice" step="any" min="0.001" value="1">
+                </div>
+                <div class="input-group">
+                    <label>总资金 <span class="unit">(元)</span></label>
+                    <input type="number" id="totalCapital" step="100" min="100" value="20000">
+                </div>
+                <div class="input-group">
+                    <label>网格档位 <span class="unit">(n)</span></label>
+                    <input type="number" id="gridLevels" step="1" min="2" max="20" value="5">
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">⟳ 计算网格</button>
+                <button type="reset" class="btn btn-outline" id="resetBtn">重置</button>
+            </div>
+        </form>
+
+        <div class="result-panel" id="resultPanel">
+            <div class="table-wrap" id="gridTableWrap" style="max-height:320px;">
+                <div class="empty-state">📊 点击计算生成网格档位</div>
+            </div>
+            <div class="footnote">
+                ⚡ 每档仓位 = ln(P_high/P) / ln(P_high/P_low)
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：插值看板 -->
+    <div class="card">
+        <div class="card-header">
+            <h2>📊 插值看板</h2>
+            <span class="badge">局部加密 · 100股</span>
+        </div>
+        <div class="sub">
+            <span>等比中项插值</span>
+            <span class="formula-hint">P_a × (P_b/P_a)^(j/(m+1))</span>
+        </div>
+
+        <div class="interp-controls">
+            <div class="input-group">
+                <label>下限</label>
+                <input type="number" id="interpLow" step="any" min="0.001" value="4">
+            </div>
+            <div class="input-group">
+                <label>上限</label>
+                <input type="number" id="interpHigh" step="any" min="0.01" value="16">
+            </div>
+            <div class="input-group">
+                <label>分段数</label>
+                <input type="number" id="interpSegments" step="1" min="1" max="12" value="5">
+            </div>
+            <button class="btn btn-primary btn-sm" id="interpGenerateBtn">生成</button>
+            <button class="btn-link btn-sm" id="syncInterpBtn">↺ 同步</button>
+        </div>
+
+        <div class="interp-panel">
+            <div class="table-wrap" id="interpTableWrap">
+                <div class="empty-state">📭 设置区间与分段数，点击生成</div>
+            </div>
+        </div>
+
+        <!-- 收益风险比滑块:R* → q → P* / 股数 / 市值 -->
+        <div class="rr-block">
+            <div class="rr-title">
+                <span>🎯 收益风险比 R*</span>
+                <span class="rr-current"><span id="rrValue">1.50 : 1</span></span>
+            </div>
+            <input type="range" id="rrSlider" class="rr-slider" min="0" max="5" step="0.05" value="1.5">
+            <div class="rr-marks">
+                <span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5+</span>
+            </div>
+            <div class="rr-result">
+                <div class="rr-cell"><span class="k">仓位 q*</span><span class="v" id="rrRatio">—</span></div>
+                <div class="rr-cell"><span class="k">对应价 P*</span><span class="v highlight" id="rrPrice">—</span></div>
+                <div class="rr-cell"><span class="k">应持股(100股)</span><span class="v" id="rrShares">—</span></div>
+                <div class="rr-cell"><span class="k">应持市值</span><span class="v" id="rrValueDisplay">—</span></div>
+            </div>
+        </div>
+
+        <div class="footnote" style="margin-top:8px;">
+            🔹 持股数按 A 股规则向下取整至 100 股
+        </div>
+    </div>
+</div>
+
+<script src="etf_data.js"></script>
+<script>
+    (function() {
+        "use strict";
+
+        // ----- DOM 引用 -----
+        const etfSelect = document.getElementById('etfSelect');
+        const sideHigh = document.getElementById('sideHigh');
+        const sideLow = document.getElementById('sideLow');
+        const applyBtn = document.getElementById('applyBtn');
+        const favoriteContainer = document.getElementById('favoriteContainer');
+
+        const highPrice = document.getElementById('highPrice');
+        const lowPrice = document.getElementById('lowPrice');
+        const totalCapital = document.getElementById('totalCapital');
+        const gridLevels = document.getElementById('gridLevels');
+        const gridTableWrap = document.getElementById('gridTableWrap');
+        const gridForm = document.getElementById('gridForm');
+        const resetBtn = document.getElementById('resetBtn');
+
+        const interpLow = document.getElementById('interpLow');
+        const interpHigh = document.getElementById('interpHigh');
+        const interpSegments = document.getElementById('interpSegments');
+        const interpGenerateBtn = document.getElementById('interpGenerateBtn');
+        const syncInterpBtn = document.getElementById('syncInterpBtn');
+        const interpTableWrap = document.getElementById('interpTableWrap');
+
+        const displayPrice = document.getElementById('displayPrice');
+        const displayRatio = document.getElementById('displayRatio');
+        const displayValue = document.getElementById('displayValue');
+        const displayShares = document.getElementById('displayShares');
+        const manualPrice = document.getElementById('manualPrice');
+        const fetchPriceBtn = document.getElementById('fetchPriceBtn');
+
+        // 收益风险比滑块
+        const rrSlider = document.getElementById('rrSlider');
+        const rrValue = document.getElementById('rrValue');
+        const rrRatio = document.getElementById('rrRatio');
+        const rrPrice = document.getElementById('rrPrice');
+        const rrShares = document.getElementById('rrShares');
+        const rrValueDisplay = document.getElementById('rrValueDisplay');
+
+        // ----- 工具函数 -----
+        function parseNum(v, fallback) { const n=parseFloat(v); return (isNaN(n)||n<=0)?fallback:n; }
+        function parsePosInt(v, fallback) { const n=parseInt(v,10); return (isNaN(n)||n<1)?fallback:n; }
+        function floor100(s) { return Math.floor(s/100)*100; }
+
+        function generateBaseGrid(high, low, n) {
+            if (high<=low || n<2) return [];
+            const pts=[]; for(let k=0;k<=n;k++) pts.push(high*Math.pow(low/high, k/n));
+            return pts;
+        }
+
+        function calcRatio(p, high, low) {
+            if (p>=high) return 0; if (p<=low) return 1;
+            const lg=Math.log(high/low); if (lg===0) return 0;
+            return Math.min(1, Math.max(0, Math.log(high/p)/lg));
+        }
+
+        function generateInterp(high, low, seg) {
+            if (high<=low || seg<1) return [];
+            const pts=[]; const steps=seg+1;
+            for(let j=0;j<=steps;j++) pts.push(high*Math.pow(low/high, j/steps));
+            return pts;
+        }
+
+        // ----- 更新当前价格信息 -----
+        function updateCurrentInfo(price) {
+            const high=parseNum(highPrice.value,32);
+            const low=parseNum(lowPrice.value,1);
+            const capital=parseNum(totalCapital.value,20000);
+            if(high<=low || price<=0) {
+                displayPrice.textContent='—'; displayRatio.textContent='—'; displayValue.textContent='—'; displayShares.textContent='—';
+                return;
+            }
+            const ratio=calcRatio(price, high, low);
+            const target=capital*ratio;
+            const shares=floor100(price>0?target/price:0);
+            displayPrice.textContent=price.toFixed(4);
+            displayRatio.textContent=(ratio*100).toFixed(1)+'%';
+            displayValue.textContent=Math.round(target).toLocaleString()+' 元';
+            displayShares.textContent=shares.toLocaleString();
+        }
+
+        // ----- 收益风险比滑块:R* → q → P* / 股数 / 市值 -----
+        // 公式(取自对数网格标准方案 第四节):
+        //   q* = R* / (1 + R*)
+        //   P* = P_high^(1-q*) · P_low^(q*)
+        //   应持市值 = M · q*
+        //   应持股数 = floor((应持市值 / P*) / 100) * 100
+        function updateRRSlider() {
+            const rr = parseFloat(rrSlider.value);
+            const high = parseNum(highPrice.value, 32);
+            const low  = parseNum(lowPrice.value, 1);
+            const capital = parseNum(totalCapital.value, 20000);
+            const valid = high > low && capital > 0;
+
+            if (!valid) {
+                rrValue.textContent = rr.toFixed(2) + ' : 1';
+                rrRatio.textContent = '—';
+                rrPrice.textContent = '—';
+                rrShares.textContent = '—';
+                rrValueDisplay.textContent = '—';
+                return;
+            }
+
+            const q = rr / (1 + rr);
+            const lnHigh = Math.log(high);
+            const lnLow  = Math.log(low);
+            const price = Math.exp((1 - q) * lnHigh + q * lnLow);
+            const targetVal = capital * q;
+            const shares = price > 0 ? floor100(targetVal / price) : 0;
+
+            rrValue.textContent = rr.toFixed(2) + ' : 1';
+            rrRatio.textContent = (q * 100).toFixed(1) + '%';
+            rrPrice.textContent = price.toFixed(4);
+            rrShares.textContent = shares.toLocaleString();
+            rrValueDisplay.textContent = Math.round(targetVal).toLocaleString() + ' 元';
+        }
+
+        rrSlider.addEventListener('input', updateRRSlider);
+
+        // ----- 渲染主网格 (表格) -----
+        function renderGrid(high, low, capital, n) {
+            if (high<=low) { gridTableWrap.innerHTML='<div class="empty-state">⚠️ 最高价必须大于最低价</div>'; return; }
+            const grid=generateBaseGrid(high,low,n);
+            // 等对数网格下,第 k 档仓位 = k/n;故 k/n == 0.6 即为 60% 默认开仓档(n=5→idx=3,n=10→idx=6...)
+            const isCoolRow = (idx) => Math.abs(idx / n - 0.6) < 1e-9;
+            let html='<table><thead><tr><th>档位</th><th>价格</th><th>仓位%</th><th>应持市值</th><th>持股(100股)</th></tr></thead><tbody>';
+            grid.forEach((p,idx)=>{
+                const ratio=calcRatio(p, high, low);
+                const val=capital*ratio;
+                const sh=floor100(p>0?val/p:0);
+                const cls = isCoolRow(idx) ? ' class="row-cool"' : '';
+                html+=`<tr${cls}><td>${idx}</td><td>${p.toFixed(4)}</td><td>${(ratio*100).toFixed(1)}%</td><td>${Math.round(val).toLocaleString()}</td><td>${sh.toLocaleString()}</td></tr>`;
+            });
+            html+='</tbody></table>';
+            gridTableWrap.innerHTML=html;
+            const cur=parseNum(manualPrice.value,8);
+            updateCurrentInfo(cur);
+        }
+
+        // ----- 渲染插值表 -----
+        function renderInterp(high, low, seg, capital) {
+            const pts=generateInterp(high,low,seg);
+            if(pts.length<2){ interpTableWrap.innerHTML='<div class="empty-state">⚠️ 上限>下限</div>'; return; }
+            const mh=parseNum(highPrice.value,32), ml=parseNum(lowPrice.value,1);
+            const lg=Math.log(mh/ml);
+            let html='<table><thead><tr><th>价格</th><th>仓位%</th><th>应持市值</th><th>持股(100股)</th></tr></thead><tbody>';
+            pts.forEach(p=>{
+                let r=0; if(p>=mh) r=0; else if(p<=ml) r=1; else if(lg>0) r=Math.min(1,Math.max(0,Math.log(mh/p)/lg));
+                const val=capital*r; const sh=floor100(p>0?val/p:0);
+                html+=`<tr><td>${p.toFixed(3)}</td><td>${(r*100).toFixed(1)}%</td><td>${Math.round(val).toLocaleString()}</td><td>${sh.toLocaleString()}</td></tr>`;
+            });
+            html+='</tbody></table>';
+            interpTableWrap.innerHTML=html;
+        }
+
+        // ----- 同步插值 (上下档) -----
+        function syncInterp() {
+            const high=parseNum(highPrice.value,32), low=parseNum(lowPrice.value,1);
+            const n=parsePosInt(gridLevels.value,5), cur=parseNum(manualPrice.value,8);
+            const capital=parseNum(totalCapital.value,20000);
+            if(high<=low||n<2){ interpTableWrap.innerHTML='<div class="empty-state">⚠️ 主网格无效</div>'; return; }
+            const grid=generateBaseGrid(high,low,n);
+            let upper=grid[0], lower=grid[grid.length-1];
+            let exact=-1; for(let i=0;i<grid.length;i++){ if(Math.abs(grid[i]-cur)<0.001){ exact=i; break; } }
+            if(exact!==-1){ upper=(exact>0)?grid[exact-1]:grid[exact]; lower=(exact<grid.length-1)?grid[exact+1]:grid[exact]; }
+            else { for(let i=0;i<grid.length-1;i++){ if(grid[i]>=cur&&grid[i+1]<=cur){ upper=grid[i]; lower=grid[i+1]; break; } } }
+            if(upper<lower)[upper,lower]=[lower,upper];
+            interpHigh.value=upper.toFixed(4); interpLow.value=lower.toFixed(4);
+            interpSegments.value=5;
+            renderInterp(upper, lower, 5, capital);
+        }
+
+        // ----- 填充品种下拉 -----
+        // 列表只显示"名称(代码)",悬停 title 显示高/低,选中后填入侧边输入框
+        function populateSelect() {
+            etfSelect.innerHTML='<option value="">— 选择ETF —</option>';
+
+            // 按交易所前缀分组(sh=沪市, sz=深市)
+            const groups = { sh: [], sz: [] };
+            ETF_DATA.forEach(d => groups[d.code.startsWith('sh') ? 'sh' : 'sz'].push(d));
+
+            // 分组顺序固定:沪市在前,深市在后
+            [['sh', '— 沪市 ETF (sh) —'], ['sz', '— 深市 ETF (sz) —']].forEach(([k, label]) => {
+                if (!groups[k].length) return;
+                const og = document.createElement('optgroup');
+                og.label = label;
+                groups[k].forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.code;
+                    opt.textContent = `${d.name} (${d.code})`;
+                    opt.title = `高: ${d.high}    低: ${d.low}`; // 悬停可见,不影响列表
+                    og.appendChild(opt);
+                });
+                etfSelect.appendChild(og);
+            });
+        }
+        populateSelect();
+
+        // 切换品种:填充高低 + 执行一次完整刷新(拉价 + 重算主网格 + 同步插值)
+        etfSelect.addEventListener('change', function() {
+            const code=this.value;
+            if(!code){ sideHigh.value=''; sideLow.value=''; }
+            else {
+                const found=ETF_DATA.find(d=>d.code===code);
+                if(found){ sideHigh.value=found.high; sideLow.value=found.low; }
+            }
+            refreshAll();
+        });
+
+        applyBtn.addEventListener('click', function() {
+            const h=parseNum(sideHigh.value,0), l=parseNum(sideLow.value,0);
+            if(h>0 && l>0 && h>l){ highPrice.value=h; lowPrice.value=l; }
+            refreshAll();
+        });
+
+        // 渲染优选品种
+        function renderFavorites() {
+            favoriteContainer.innerHTML='';
+            FAVORITES.forEach(f=>{
+                // FAVORITES 格式: 数字+.后缀 (如 516650.HF / 588000.SH)
+                // ETF_DATA 格式: sh/sz+数字   → 需补前缀再匹配
+                const m = f.code.match(/^(\d+)\.\w+$/);
+                const found = m
+                    ? (ETF_DATA.find(d => d.code === 'sh' + m[1])
+                    || ETF_DATA.find(d => d.code === 'sz' + m[1])
+                    || null)
+                    : null;
+                const div=document.createElement('div');
+                div.className='favorite-item';
+                const name=found?found.name:f.name;
+                const code=f.code;
+                const hl=found?`${found.high}/${found.low}`:'--';
+                div.innerHTML=`<span>${name}</span><span class="code">${code} <span class="highlow">${hl}</span></span>`;
+                div.addEventListener('click', function(){
+                    // 点击 = 选中:填侧边 + 设下拉 + 应用
+                    // 不再手动触发 change 事件:applyBtn→refreshAll() 会统一拉价,
+                    // 避免 change + refreshAll 重复请求实时价
+                    if(found){
+                        sideHigh.value = found.high;
+                        sideLow.value  = found.low;
+                        etfSelect.value = found.code;
+                    } else {
+                        sideHigh.value = '';
+                        sideLow.value  = '';
+                        etfSelect.value = '';
+                    }
+                    applyBtn.click();
+                });
+                favoriteContainer.appendChild(div);
+            });
+        }
+        renderFavorites();
+
+        // ----- 获取腾讯财经实时价格 (qt.gtimg.cn) -----
+        // 接口: https://qt.gtimg.cn/q={code}  返回文本中 fields[3] 为当前价
+        // 纯拉取:不负责 UI 反馈,返回价格(无 ETF 时返回 null)
+        async function tryFetchTencentPrice() {
+            const code = etfSelect.value;
+            if (!code) return null;
+            const resp = await fetch(`https://qt.gtimg.cn/q=${code}`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const text = await resp.text();
+            const m = text.match(/v_\w+="(.+?)"/);
+            if (!m) throw new Error('返回数据格式异常');
+            const fields = m[1].split('~');
+            const price = parseFloat(fields[3]);
+            if (!price || price <= 0) throw new Error('价格无效');
+            return price;
+        }
+
+        // 带 UI 反馈的拉取入口(供"获取实时价"按钮专用)
+        async function fetchTencentPrice() {
+            if (!etfSelect.value) { alert('请先在上方选择一个 ETF 品种'); return; }
+            fetchPriceBtn.disabled = true;
+            const originalText = fetchPriceBtn.textContent;
+            fetchPriceBtn.textContent = '获取中…';
+            try {
+                const price = await tryFetchTencentPrice();
+                if (price === null) return;
+                manualPrice.value = price.toFixed(4);
+                updateCurrentInfo(price);
+                const high = parseNum(highPrice.value, 32);
+                const low  = parseNum(lowPrice.value, 1);
+                const capital = parseNum(totalCapital.value, 20000);
+                const n = parsePosInt(gridLevels.value, 5);
+                renderGrid(high, low, capital, n);
+                syncInterp();
+            } catch (e) {
+                alert(`获取实时价失败: ${e.message}\n(可能受 CORS 或网络限制,可手动输入价格)`);
+            } finally {
+                fetchPriceBtn.disabled = false;
+                fetchPriceBtn.textContent = originalText;
+            }
+        }
+
+        fetchPriceBtn.addEventListener('click', fetchTencentPrice);
+
+        // ----- 一键刷新:任何"刷新"动作都先拉取实时价,再驱动所有看板 -----
+        async function refreshAll() {
+            // 1) 选中 ETF 时主动拉最新价;失败则静默继续本地刷新
+            if (etfSelect.value) {
+                try {
+                    const price = await tryFetchTencentPrice();
+                    if (price) {
+                        manualPrice.value = price.toFixed(4);
+                        updateCurrentInfo(price);
+                    }
+                } catch (_) { /* 网络异常不阻塞本地刷新 */ }
+            }
+            // 2) 始终本地重算主网格 + 同步插值
+            const high = parseNum(highPrice.value, 32);
+            const low  = parseNum(lowPrice.value, 1);
+            const capital = parseNum(totalCapital.value, 20000);
+            const n = parsePosInt(gridLevels.value, 5);
+            renderGrid(high, low, capital, n);
+            syncInterp();
+            // 3) 未选 ETF 时保留手动输入的当前价显示
+            if (!etfSelect.value) {
+                const cur = parseNum(manualPrice.value, 0);
+                if (cur > 0) updateCurrentInfo(cur);
+            }
+            // 4) 同步刷新收益风险比滑块结果(高/低/资金变化时联动)
+            updateRRSlider();
+        }
+
+        manualPrice.addEventListener('input', function() {
+            const price=parseNum(this.value,0);
+            if(price>0) updateCurrentInfo(price);
+        });
+
+        // ----- 主表单事件 -----
+        gridForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            refreshAll();
+        });
+
+        resetBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            highPrice.value='32'; lowPrice.value='1'; totalCapital.value='20000'; gridLevels.value='5';
+            manualPrice.value='8';
+            rrSlider.value='1.5';
+            gridTableWrap.innerHTML='<div class="empty-state">📊 点击计算生成网格档位</div>';
+            interpTableWrap.innerHTML='<div class="empty-state">📭 设置区间与分段数，点击生成</div>';
+            displayPrice.textContent='—'; displayRatio.textContent='—'; displayValue.textContent='—'; displayShares.textContent='—';
+            updateRRSlider();
+        });
+
+        interpGenerateBtn.addEventListener('click', function() {
+            const h=parseNum(interpHigh.value,16), l=parseNum(interpLow.value,4);
+            const seg=parsePosInt(interpSegments.value,5), capital=parseNum(totalCapital.value,20000);
+            if(h<=l){ interpTableWrap.innerHTML='<div class="empty-state">⚠️ 上限>下限</div>'; return; }
+            renderInterp(h,l,seg,capital);
+        });
+
+        syncInterpBtn.addEventListener('click', refreshAll);
+
+        // 初始化
+        window.addEventListener('DOMContentLoaded', function() {
+            const high=parseNum(highPrice.value,32), low=parseNum(lowPrice.value,1);
+            const capital=parseNum(totalCapital.value,20000), n=parsePosInt(gridLevels.value,5);
+            renderGrid(high,low,capital,n);
+            syncInterp();
+            const cur=parseNum(manualPrice.value,8);
+            updateCurrentInfo(cur);
+            updateRRSlider();
+        });
+
+    })();
+</script>
+</body>
+</html>
